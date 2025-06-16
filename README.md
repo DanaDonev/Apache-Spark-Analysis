@@ -20,8 +20,8 @@ Bachelor’s Thesis – Analyzing a portion of OpenAlex data using Apache Spark 
 | `element_at()`      | Get array/map element by index/key           |
 
 ## Data types (additional to the SQL: TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE, DECIMAL, STRING, CHAR, VARCHAR, BOOLEAN, BINARY, DATE, TIMESTAMP, INTERVAL):
-| **Type**   | **Brief Explanation**                                    | **Example**                      |
-| ---------- | -------------------------------------------------------- | -------------------------------- |
-| **ARRAY**  | **List of values of the same type (e.g., list of tags)** | `ARRAY<STRING>` → `["a", "b"]`   |
-| **MAP**    | **Key-value pairs, useful when field names vary**        | `MAP<STRING, INT>`               |
-| **STRUCT** | **Nested object, like a small table inside a column**    | `STRUCT<age: INT, city: STRING>` |
+| **Type**   | **Brief Explanation**                                    | **Example**                      | **Functions**                                |
+| ---------- | -------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
+| **ARRAY**  | **List of values of the same type (e.g., list of tags)** | `ARRAY<STRING>` → `["a", "b"]`   | `explode()`, `posexplode()`, `size()`        |
+| **MAP**    | **Key-value pairs, useful when field names vary**        | `MAP<STRING, INT>`               | `map_keys()`, `map_values()`, `element_at()` |
+| **STRUCT** | **Nested object, like a small table inside a column**    | `STRUCT<age: INT, city: STRING>` | **Dot notation (`.`)**, `inline()`           |
