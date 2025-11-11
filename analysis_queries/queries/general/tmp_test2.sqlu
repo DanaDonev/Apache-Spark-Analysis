@@ -1,0 +1,45 @@
+WITH filtered AS (
+    SELECT *
+    FROM works w
+    WHERE get_json_object(w.primary_topic, '$.field.display_name') = 'Computer Science'
+),
+
+exploded_institutions AS (
+    SELECT
+        w.id AS work_id,
+        w.title,        
+w.publication_year,
+        w.cited_by_count,
+        --w.field,
+        get_json_object(w.primary_topic, '$.display_name') AS topic,
+        auth_struct.author.id AS author_id,
+        auth_struct.author.display_name AS author_name,
+        get_json_object(auth_struct.institutions[0], '$.id') AS institution_id,
+        get_json_object(auth_struct.institutions[0], '$.display_name') AS institution_name,
+        get_json_object(auth_struct.institutions[0], '$.country_code') AS country_code
+        --get_json_object(inst, '$.id') AS institution_id,
+        --get_json_object(inst, '$.display_name') AS institution_name,
+        --get_json_object(inst, '$.country_code') AS country_code
+        --cb.year AS cited_year,
+        --cb.cited_by_count AS citations_in_year
+    FROM filtered w
+    LATERAL VIEW EXPLODE(w.authorships) auth AS auth_struct
+    --LATERAL VIEW EXPLODE(auth_struct.institutions) inst AS inst
+    WHERE size(auth_struct.institutions) > 0
+--LATERAL VIEW OUTER EXPLODE(w.counts_by_year) cb AS cb
+)
+
+
+SELECT
+    publication_year,
+    institution_name,
+    COUNT(DISTINCT work_id) AS number_of_works,
+    SUM(cited_by_count) AS number_of_citations,
+    max_by(title, cited_by_count) AS best_work,
+    MAX(cited_by_count) AS citations,
+    max_by(author_name, cited_by_count) AS author_most_cited_work
+FROM exploded_institutions
+WHERE publication_year >= 2000
+  AND institution_name IN ('University of Primorska', 'University of Ljubljana', 'University of Maribor')
+GROUP BY publication_year, institution_name
+ORDER BY publication_year, institution_name;
