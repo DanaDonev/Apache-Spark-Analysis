@@ -1,0 +1,26 @@
+INSERT OVERWRITE DIRECTORY 'openalex_analysis_2/results/general/works_citations_per_year_per_uni'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+-- all works with an author with an institution from slovenia
+WITH exploded_institutions AS
+(
+SELECT
+  w.id AS work_id,
+  w.publication_year,
+  get_json_object(w.primary_topic, '$.field.display_name') AS field,
+  get_json_object(inst, '$.id') AS institution_id,
+  get_json_object(inst, '$.display_name') AS display_name,
+  get_json_object(inst, '$.country_code') AS country_code
+FROM works w
+LATERAL VIEW EXPLODE(w.authorships) auth AS auth_struct
+LATERAL VIEW EXPLODE(auth_struct.institutions) inst AS inst)
+SELECT
+  publication_year,
+  field,
+  display_name,
+  COUNT(*) AS num_works
+--  SUM(cited_by_count) AS total_citations
+FROM exploded_institutions
+WHERE publication_year IS NOT NULL AND country_code = 'SI' AND field = 'Computer Science'
+GROUP BY publication_year, display_name, field
+ORDER BY publication_year;

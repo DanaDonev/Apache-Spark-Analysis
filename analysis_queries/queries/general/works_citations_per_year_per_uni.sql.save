@@ -1,0 +1,21 @@
+INSERT OVERWRITE DIRECTORY 'openalex_analysis_2/results/general/works_citations_per_year_per_uni'
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+WITH uni_works AS
+SELECT
+  w.*,
+  ei.institution_id,
+  ei.display_name AS institution_name,
+  ei.country_code AS institution_country
+FROM works w
+JOIN exploded_institutions ei ON w.id = ei.work_id
+WHERE country_code = 
+--ei.institution_id = 'https://openalex.org/I118905719';
+SELECT
+  publication_year,
+  COUNT(*) AS num_works,
+  SUM(cited_by_count) AS total_citations
+FROM uni_works
+WHERE publication_year IS NOT NULL
+GROUP BY publication_year
+ORDER BY publication_year;
