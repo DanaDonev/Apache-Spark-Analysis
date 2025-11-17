@@ -2,54 +2,36 @@ INSERT OVERWRITE DIRECTORY 'analysis_queries/results/general/main_query1'
 ROW FORMAT DELIMITED
 FIELDS TERMINATED BY ','
 
---all works form computer scinece
 WITH filtered AS (
     SELECT *
     FROM works w
     WHERE get_json_object(w.primary_topic, '$.field.display_name') = 'Computer Science'
 ),
 
---row per each work-author combination from the filtered
 exploded_institutions AS (
     SELECT
         w.id AS work_id,
-	w.title,
-	w.publication_year,
+        w.title,
+        w.publication_year,
         w.cited_by_count,
-        --w.field,
         get_json_object(w.primary_topic, '$.display_name') AS topic,
-	auth_struct.author.id AS author_id,
+
+        auth_struct.author.id AS author_id,
         auth_struct.author.display_name AS author_name,
+
         get_json_object(auth_struct.institutions[0], '$.id') AS institution_id,
-	CASE
+        CASE
             WHEN get_json_object(auth_struct.institutions[0], '$.display_name')
                  IN ('Jožef Stefan Institute', 'Jožef Stefan International Postgraduate School')
             THEN 'Jožef Stefan'
             ELSE get_json_object(auth_struct.institutions[0], '$.display_name')
         END AS institution_name,
         get_json_object(auth_struct.institutions[0], '$.country_code') AS country_code
-        --cb.year AS cited_year,
-        --cb.cited_by_count AS citations_in_year
     FROM filtered w
     LATERAL VIEW EXPLODE(w.authorships) auth AS auth_struct
-    --LATERAL VIEW EXPLODE(auth_struct.institutions) inst AS inst
     WHERE size(auth_struct.institutions) > 0
 ),
 
---all slovenian from the exploded
-/*slovenian_exploded AS (
-    SELECT DISTINCT
-        work_id,
-        publication_year,
-        cited_by_count,
-        topic,
-	institution_id,
-	institution_name,
-	country_code
-    FROM exploded_institutions
-    WHERE country_code = 'SI'
-),*/
---SELECT * FROM exploded_institutions LIMIT 50;
 slovenian_exploded AS (
     SELECT DISTINCT
         work_id,
@@ -58,8 +40,6 @@ slovenian_exploded AS (
         topic,
         institution_id,
         institution_name,
-	author_id,
-	author_name,
         country_code
     FROM exploded_institutions
     WHERE institution_name IN (
@@ -70,21 +50,17 @@ slovenian_exploded AS (
     )
 ),
 
-
---ALREADY PRESENT IN THE INSTITUTIONS ENTITY - number of works and citations
-
---the topic count for each slovenian institution
 topic_count AS (
     SELECT
+        institution_id,
         institution_name,
         topic,
         COUNT(DISTINCT work_id) AS topic_count
     FROM slovenian_exploded
     WHERE topic IS NOT NULL
-    GROUP BY institution_name, topic
+    GROUP BY institution_id, institution_name, topic
 ),
 
---main topic
 main_topic_per_institution AS (
     SELECT
         institution_name,
@@ -93,9 +69,7 @@ main_topic_per_institution AS (
     FROM topic_count
     GROUP BY institution_name
 ),
---SELECT * FROM main_topic_per_institution LIMIT 30;
 
---number ot institutions and countries connected to each slovenian work
 work_collaborations AS (
     SELECT
         work_id,
@@ -105,53 +79,33 @@ work_collaborations AS (
     GROUP BY work_id
 ),
 
---number of works that have collaboration and international one
 institution_collaborations AS (
     SELECT
+        s.institution_id,
         s.institution_name,
         COUNT(DISTINCT CASE WHEN wc.num_institutions > 1 THEN s.work_id END) AS total_collaborations,
         COUNT(DISTINCT CASE WHEN wc.num_countries > 1 THEN s.work_id END) AS international_collaborations,
         COUNT(DISTINCT s.work_id) AS total_works
     FROM slovenian_exploded s
-    JOIN work_collaborations wc
-      ON s.work_id = wc.work_id
-    GROUP BY s.institution_name
+    JOIN work_collaborations wc ON s.work_id = wc.work_id
+    GROUP BY s.institution_id, s.institution_name
 ),
 
---count of works and citations per author from SI
 author_stats AS (
     SELECT
+        institution_id,
         institution_name,
         author_id,
         author_name,
         COUNT(DISTINCT work_id) AS work_count,
         SUM(cited_by_count) AS total_citations
-    FROM slovenian_exploded --exploded_institutions
-    GROUP BY institution_name, author_id, author_name
+    FROM exploded_institutions
+    GROUP BY institution_id, institution_name, author_id, author_name
 ),
-/*
+
 best_authors_by_work AS (
     SELECT
         institution_id,
-        institution_name,
-        max_by(
-            named_struct(
-                'work_count', work_count,
-                'total_citations', total_citations,
-                'author_id', author_id,
-                'author_name', author_name
-            ),
-            struct(work_count, total_citations)
-        ).*
-    FROM author_stats
-    GROUP BY institution_id, institution_name
-)
-*/
-
---most productive authors per institution
-best_authors_by_work AS (
-    SELECT
-        --institution_id,
         institution_name,
         author_id,
         author_name,
@@ -160,7 +114,7 @@ best_authors_by_work AS (
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
-                   PARTITION BY institution_name
+                   PARTITION BY institution_id
                    ORDER BY work_count DESC, total_citations DESC
                ) AS rn
         FROM author_stats
@@ -168,11 +122,9 @@ best_authors_by_work AS (
     WHERE rn = 1
 ),
 
-
---most cited author per institution
 best_authors_by_citations AS (
     SELECT
-        --institution_id,
+        institution_id,
         institution_name,
         author_id,
         author_name,
@@ -181,14 +133,13 @@ best_authors_by_citations AS (
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
-                   PARTITION BY institution_name
+                   PARTITION BY institution_id
                    ORDER BY total_citations DESC, work_count DESC
                ) AS rn
         FROM author_stats
     ) ranked
     WHERE rn = 1
 ),
---SELECT * FROM institution_collaborations LIMIT 10;
 
 institution_stats AS (
     SELECT
@@ -196,40 +147,35 @@ institution_stats AS (
         COUNT(DISTINCT work_id) AS number_of_works,
         SUM(cited_by_count) AS number_of_citations,
         MAX(cited_by_count) AS best_work_citations
-        --max_by(title, cited_by_count) AS best_work,
-        --max_by(author_name, cited_by_count) AS most_cited_work_author
     FROM slovenian_exploded
     GROUP BY institution_name
 )
 
-SELECT 'institution_name',-- AS institution_name,
-        'number_of_works',-- AS number_of_works,
-        'number_of_citations',-- AS number_of_citations,
-        'main_topic',-- AS main_topic,
-        'number_of_works_with_collaborations',-- AS number_of_works_with_collaborations,
-        'number_of_works_with_international_collaborations',-- AS number_of_works_with_international_collaborations,
-        'most_productive_author',-- AS most_productive_author,
-        'most_cited_author'-- AS most_cited_author
-
-UNION ALL
-
 SELECT
-        s.institution_name,
-        CAST(s.number_of_works AS STRING),
-        CAST(s.number_of_citations AS STRING),
-        mt.top_topic,
-        CAST(ic.total_collaborations AS STRING),
-        CAST(ic.international_collaborations AS STRING),
-        pa.author_name,
-        ca.author_name
+    'institution_name',
+    'number_of_works',
+    'number_of_citations',
+    'main_topic',
+    'number_of_works_with_collaborations',
+    'number_of_works_with_international_collaborations',
+    'most_productive_author',
+    'most_cited_author'
+UNION ALL
+SELECT
+    s.institution_name,
+    CAST(s.number_of_works AS STRING),
+    CAST(s.number_of_citations AS STRING),
+    mt.top_topic,
+    CAST(ic.total_collaborations AS STRING),
+    CAST(ic.international_collaborations AS STRING),
+    pa.author_name,
+    ca.author_name
 FROM institution_stats s
-    LEFT JOIN main_topic_per_institution mt
-        ON s.institution_name = mt.institution_name
-    LEFT JOIN institution_collaborations ic
-        ON s.institution_name = ic.institution_name
-    LEFT JOIN best_authors_by_work pa
-        ON s.institution_name = pa.institution_name
-    LEFT JOIN best_authors_by_citations ca
-        ON s.institution_name = ca.institution_name;
-
---SELECT 'institution_name','number_of_works','number_of_citations','main_topic','number_of_works_with_collaborations','number_of_works_with_international_collaborations','total_number_of_collaborations','total_number_of_international_collaborations','most_productive_author','most_cited_author'
+LEFT JOIN main_topic_per_institution mt
+    ON s.institution_name = mt.institution_name
+LEFT JOIN institution_collaborations ic
+    ON s.institution_name = ic.institution_name
+LEFT JOIN best_authors_by_work pa
+    ON s.institution_name = pa.institution_name
+LEFT JOIN best_authors_by_citations ca
+    ON s.institution_name = ca.institution_name;
